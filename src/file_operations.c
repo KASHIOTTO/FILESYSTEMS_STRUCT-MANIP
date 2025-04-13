@@ -104,6 +104,41 @@ static fs_retcode_t followPath(filesystem_t *fs, inode_t *start, char **tokens, 
     *dir_out = current;
     return SUCCESS;
 }
+static fs_retcode_t followPathDir(filesystem_t *fs, inode_t *start, char **tokens, size_t count, inode_t **dir_out){
+    if(!fs || !start || !dir_out){
+        return INVALID_INPUT;
+    }
+    if(count == 0){
+        *dir_out = start;
+        return SUCCESS;
+    }
+
+    inode_t *current = start;
+    size_t begin_index = 0;
+    if(strcmp(tokens[0], "root") == 0){
+        current = &fs->inodes[0];
+        begin_index = 1;
+        if(count == 1){
+            *dir_out = current;
+            return SUCCESS;
+        }
+    }
+
+    for(size_t i = begin_index; i < count; i++){
+        inode_index_t child_idx = 0;
+        int found = findChild(fs, current, tokens[i], &child_idx);
+        if(!found){
+            return NOT_FOUND;
+        }
+        inode_t *child = &fs->inodes[child_idx];
+        if(child->internal.file_type != DIRECTORY){
+            return NOT_FOUND;
+        }
+        current = child;
+    }
+    *dir_out = current;
+    return SUCCESS;
+}
 
 static void encodeInode(inode_index_t i, byte *buffer){
     buffer[0] = (byte)(i & 0xFF);
@@ -974,13 +1009,11 @@ void new_terminal(filesystem_t *fs, terminal_context_t *term)
 
 fs_file_t fs_open(terminal_context_t *context, char *path)
 {
-    
-    //confirm path exists, leads to a file
     if(!context || !path){
         return NULL;
     }
     char *path_name = strdup(path);
-    if(!path_name){//
+    if(!path_name){
         return NULL;
     }
 
@@ -994,8 +1027,8 @@ fs_file_t fs_open(terminal_context_t *context, char *path)
 
     inode_t *parent = NULL;
     if(token_count > 1){
-        fs_retcode_t retcode = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
-        if(retcode != SUCCESS){
+        fs_retcode_t ret = followPathDir(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(ret != SUCCESS){
             REPORT_RETCODE(DIR_NOT_FOUND);
             free(path_name);
             return NULL;
@@ -1005,8 +1038,9 @@ fs_file_t fs_open(terminal_context_t *context, char *path)
         parent = context->working_directory;
     }
 
+    const char *final_token = tokens[token_count - 1];
     inode_index_t child_idx = 0;
-    int found = findChild(context->fs, parent, tokens[token_count - 1], &child_idx);
+    int found = findChild(context->fs, parent, final_token, &child_idx);
     if(!found){
         REPORT_RETCODE(FILE_NOT_FOUND);
         free(path_name);
@@ -1028,8 +1062,8 @@ fs_file_t fs_open(terminal_context_t *context, char *path)
     file->fs = context->fs;
     file->inode = child;
     file->offset = 0;
-    free(path_name);
 
+    free(path_name);
     return file;
 }
 
