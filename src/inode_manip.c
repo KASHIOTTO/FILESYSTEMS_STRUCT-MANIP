@@ -160,7 +160,7 @@ static fs_retcode_t freeLast(filesystem_t *fs, inode_t *inode){
         if(dbi != 0){
             byte *p = &fs->dblocks[dbi * DATA_BLOCK_SIZE];
             release_dblock(fs, p);// fs dblock (dbp)
-            inode -> internal.direct_data[last_db] = 0;            
+            inode->internal.direct_data[last_db] = 0;            
         }
     }
     //indir 

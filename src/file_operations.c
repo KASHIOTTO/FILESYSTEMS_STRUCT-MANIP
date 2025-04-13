@@ -83,7 +83,6 @@ static fs_retcode_t followPath(filesystem_t *fs, inode_t *start, char **tokens, 
     if(strcmp(tokens[0], "root") == 0){
         current = &fs->inodes[0];
         begin = 1;
-    
         if(count == 1){
             *dir_out = current;
             return SUCCESS;
@@ -256,38 +255,35 @@ int new_file(terminal_context_t *context, char *path, permission_t perms)
         return -1;
     }
 
-    fs_retcode_t retcode;
     inode_t *parent = NULL;
     if(token_count > 1){
-    retcode = followPath(context -> fs, context -> working_directory, tokens, token_count-1, &parent);
-        if(retcode != SUCCESS){
+        fs_retcode_t ret = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(ret != SUCCESS){
             REPORT_RETCODE(DIR_NOT_FOUND);
             free(buffer);
             return -1;
         }
-    }
-    else{
+    } 
+    else {
         parent = context->working_directory;
     }
-
     const char *last = tokens[token_count - 1];
-    inode_index_t dupe = childIndex(context -> fs, parent, last);
+    inode_index_t dupe = childIndex(context->fs, parent, last);
     if(dupe != 0){
         REPORT_RETCODE(FILE_EXIST);
         free(buffer);
         return -1;
     }
-
-    size_t parent_size = parent -> internal.file_size;
+    size_t parent_size = parent->internal.file_size;
     size_t blocks = parent_size / DIRECTORY_ENTRY_SIZE;
     size_t e_read = 0;
-    byte *data = readDir(context -> fs, parent, &e_read);
+    byte *data = readDir(context->fs, parent, &e_read);
     int tomb_index = tombIndex(data, e_read);
     if(tomb_index < 0){
         size_t curr_count = (parent_size + DATA_BLOCK_SIZE - 1) / DATA_BLOCK_SIZE;
         size_t capacity = dirCap(curr_count);
         if(blocks >= capacity){
-            if(available_dblocks(context -> fs) < 1){
+            if(available_dblocks(context->fs) < 1){
                 REPORT_RETCODE(INSUFFICIENT_DBLOCKS);
                 free(data);
                 free(buffer);
@@ -295,49 +291,46 @@ int new_file(terminal_context_t *context, char *path, permission_t perms)
             }
         }
     }
-
     inode_index_t new_i = 0;
-    retcode = claim_available_inode(context -> fs, &new_i);
-    if(retcode  != SUCCESS){
-        REPORT_RETCODE(retcode );
+    fs_retcode_t retcode = claim_available_inode(context->fs, &new_i);
+    if(retcode != SUCCESS){
+        REPORT_RETCODE(retcode);
         free(data);
         free(buffer);
         return -1;
     }
-
-    inode_t *new_node = &context -> fs -> inodes[new_i];
-    new_node -> internal.file_type = DATA_FILE;
-    new_node -> internal.file_perms = perms;
-    new_node -> internal.file_size = 0;
-    memset(new_node -> internal.direct_data,0,sizeof(new_node -> internal.direct_data));
-    new_node -> internal.indirect_dblock = 0;
-    memset(new_node -> internal.file_name,0,MAX_FILE_NAME_LEN);
-    strncpy(new_node -> internal.file_name,last,MAX_FILE_NAME_LEN);
-
+    inode_t *new_node = &context->fs->inodes[new_i];
+    new_node->internal.file_type = DATA_FILE;
+    new_node->internal.file_perms = perms;
+    new_node->internal.file_size = 0;
+    memset(new_node->internal.direct_data, 0, sizeof(new_node->internal.direct_data));
+    new_node->internal.indirect_dblock = 0;
+    memset(new_node->internal.file_name, 0, MAX_FILE_NAME_LEN);
+    strncpy(new_node->internal.file_name, last, MAX_FILE_NAME_LEN);
     byte entry[DIRECTORY_ENTRY_SIZE];
-    memset(entry,0,DIRECTORY_ENTRY_SIZE);
+    memset(entry, 0, DIRECTORY_ENTRY_SIZE);
     encodeInode(new_i, entry);
     if(strlen(last) < MAX_FILE_NAME_LEN){
-        memcpy(entry + 2,last,strlen(last));
-    }
+        memcpy(entry + 2, last, strlen(last));
+    } 
     else{
-        memcpy(entry + 2,last,MAX_FILE_NAME_LEN);
-    }
-    if(tomb_index >= 0){
-        memcpy(data + tomb_index * DIRECTORY_ENTRY_SIZE,entry,DIRECTORY_ENTRY_SIZE);
-    }
-    else{
-        data = realloc(data,(e_read + 1) * DIRECTORY_ENTRY_SIZE);
-        memcpy(data + e_read * DIRECTORY_ENTRY_SIZE,entry,DIRECTORY_ENTRY_SIZE);
-        e_read++;
+        memcpy(entry + 2, last, MAX_FILE_NAME_LEN);
     }
 
-    retcode = writeDir(context -> fs, parent, data, e_read);
+    if(tomb_index >= 0){
+        memcpy(data + tomb_index * DIRECTORY_ENTRY_SIZE, entry, DIRECTORY_ENTRY_SIZE);
+    } 
+    else{
+        data = realloc(data, (e_read + 1) * DIRECTORY_ENTRY_SIZE);
+        memcpy(data + e_read * DIRECTORY_ENTRY_SIZE, entry, DIRECTORY_ENTRY_SIZE);
+        e_read++;
+    }
+    retcode = writeDir(context->fs, parent, data, e_read);
     free(data);
     free(buffer);
-    if(retcode  != SUCCESS){
-        release_inode(context -> fs, new_node);
-        REPORT_RETCODE(retcode );
+    if(retcode != SUCCESS){
+        release_inode(context->fs, new_node);
+        REPORT_RETCODE(retcode);
         return -1;
     }
     return 0;
@@ -364,34 +357,32 @@ int new_directory(terminal_context_t *context, char *path)
     fs_retcode_t retcode;
     inode_t *parent = NULL;
     if(token_count > 1){
-    retcode = followPath(context -> fs, context -> working_directory, tokens, token_count-1, &parent);
-        if(retcode  != SUCCESS){
+        retcode = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(retcode != SUCCESS){
             free(buffer);
             REPORT_RETCODE(DIR_NOT_FOUND);
             return -1;
         }
-    }
+    } 
     else{
         parent = context->working_directory;
     }
-
     const char *last = tokens[token_count - 1];
-    inode_index_t dupe = childIndex(context -> fs, parent, last);
+    inode_index_t dupe = childIndex(context->fs, parent, last);
     if(dupe != 0){
         REPORT_RETCODE(DIRECTORY_EXIST);
         free(buffer);
         return -1;
     }
-
     size_t e_read = 0;
-    byte *dirbuffer = readDir(context -> fs, parent, &e_read);
+    byte *dirbuffer = readDir(context->fs, parent, &e_read);
     int tomb_index = tombIndex(dirbuffer, e_read);
     if(tomb_index < 0){
-        size_t blocks = parent -> internal.file_size / DIRECTORY_ENTRY_SIZE;
-        size_t block_count = (parent -> internal.file_size + DATA_BLOCK_SIZE - 1) / DATA_BLOCK_SIZE;
+        size_t blocks = parent->internal.file_size / DIRECTORY_ENTRY_SIZE;
+        size_t block_count = (parent->internal.file_size + DATA_BLOCK_SIZE - 1) / DATA_BLOCK_SIZE;
         size_t capacity = dirCap(block_count);
         if(blocks >= capacity){
-            if(available_dblocks(context -> fs) < 1){
+            if(available_dblocks(context->fs) < 1){
                 REPORT_RETCODE(INSUFFICIENT_DBLOCKS);
                 free(dirbuffer);
                 free(buffer);
@@ -399,81 +390,73 @@ int new_directory(terminal_context_t *context, char *path)
             }
         }
     }
-
-    if(available_dblocks(context -> fs) < 1){
+    if(available_dblocks(context->fs) < 1){
         REPORT_RETCODE(INSUFFICIENT_DBLOCKS);
-                free(dirbuffer);
-                free(buffer);
-                return -1;
-    }
-
-    inode_index_t new_i;
-    retcode = claim_available_inode(context -> fs, &new_i);
-    if(retcode  != SUCCESS){
-        REPORT_RETCODE(retcode );
         free(dirbuffer);
         free(buffer);
         return -1;
     }
-
-    inode_t *new_node = &context -> fs -> inodes[new_i];
-    new_node -> internal.file_type = DIRECTORY;
-    new_node -> internal.file_perms = 0;
-    new_node -> internal.file_size = 0;
-    memset(new_node -> internal.direct_data,0,sizeof(new_node -> internal.direct_data));
-    new_node -> internal.indirect_dblock = 0;
-    memset(new_node -> internal.file_name,0,MAX_FILE_NAME_LEN);
-    strncpy(new_node -> internal.file_name,last,MAX_FILE_NAME_LEN);
-
-    inode_index_t parent_i = (inode_index_t)(parent - context -> fs -> inodes);
+    inode_index_t new_i;
+    retcode = claim_available_inode(context->fs, &new_i);
+    if(retcode != SUCCESS){
+        REPORT_RETCODE(retcode);
+        free(dirbuffer);
+        free(buffer);
+        return -1;
+    }
+    inode_t *new_node = &context->fs->inodes[new_i];
+    new_node->internal.file_type = DIRECTORY;
+    new_node->internal.file_perms = 0;
+    new_node->internal.file_size = 0;
+    memset(new_node->internal.direct_data, 0, sizeof(new_node->internal.direct_data));
+    new_node->internal.indirect_dblock = 0;
+    memset(new_node->internal.file_name, 0, MAX_FILE_NAME_LEN);
+    strncpy(new_node->internal.file_name, last, MAX_FILE_NAME_LEN);
+    inode_index_t parent_i = (inode_index_t)(parent - context->fs->inodes);
     byte node_entries[2 * DIRECTORY_ENTRY_SIZE];
-    memset(node_entries,0,sizeof(node_entries));
-
+    memset(node_entries, 0, sizeof(node_entries));
     encodeInode(new_i, &node_entries[0]);
     node_entries[2] = '.';
-
     encodeInode(parent_i, &node_entries[DIRECTORY_ENTRY_SIZE]);
     node_entries[DIRECTORY_ENTRY_SIZE + 2] = '.';
     node_entries[DIRECTORY_ENTRY_SIZE + 3] = '.';
-
-    retcode = inode_write_data(context -> fs, new_node, node_entries, 2 * DIRECTORY_ENTRY_SIZE);
-    if(retcode  != SUCCESS){
-        release_inode(context -> fs, new_node);
+    retcode = inode_write_data(context->fs, new_node, node_entries, 2 * DIRECTORY_ENTRY_SIZE);
+    if(retcode != SUCCESS){
+        release_inode(context->fs, new_node);
         free(dirbuffer);
         free(buffer);
-        REPORT_RETCODE(retcode );
+        REPORT_RETCODE(retcode);
         return -1;
     }
-
     byte entry[DIRECTORY_ENTRY_SIZE];
-    memset(entry,0,DIRECTORY_ENTRY_SIZE);
+    memset(entry, 0, DIRECTORY_ENTRY_SIZE);
     encodeInode(new_i, entry);
     if(strlen(last) < MAX_FILE_NAME_LEN){
-        memcpy(entry + 2,last,strlen(last));
-    }
+        memcpy(entry + 2, last, strlen(last));
+    } 
     else{
-        memcpy(entry + 2,last,MAX_FILE_NAME_LEN);
+        memcpy(entry + 2, last, MAX_FILE_NAME_LEN);
     }
+    
     if(tomb_index >= 0){
-        memcpy(dirbuffer + tomb_index * DIRECTORY_ENTRY_SIZE,entry,DIRECTORY_ENTRY_SIZE);
-    }
+        memcpy(dirbuffer + tomb_index * DIRECTORY_ENTRY_SIZE, entry, DIRECTORY_ENTRY_SIZE);
+    } 
     else{
-        dirbuffer = realloc(dirbuffer,(e_read + 1) * DIRECTORY_ENTRY_SIZE);
-        memcpy(dirbuffer + e_read * DIRECTORY_ENTRY_SIZE,entry,DIRECTORY_ENTRY_SIZE);
+        dirbuffer = realloc(dirbuffer, (e_read + 1) * DIRECTORY_ENTRY_SIZE);
+        memcpy(dirbuffer + e_read * DIRECTORY_ENTRY_SIZE, entry, DIRECTORY_ENTRY_SIZE);
         e_read++;
     }
-
-    retcode = writeDir(context -> fs, parent, dirbuffer, e_read);
+    retcode = writeDir(context->fs, parent, dirbuffer, e_read);
     free(dirbuffer);
     free(buffer);
-    if(retcode  != SUCCESS){
-        inode_release_data(context -> fs, new_node);
-        release_inode(context -> fs, new_node);
-        REPORT_RETCODE(retcode );
+    if(retcode != SUCCESS){
+        inode_release_data(context->fs, new_node);
+        release_inode(context->fs, new_node);
+        REPORT_RETCODE(retcode);
         return -1;
     }
     return 0;
-    
+
 }
 
 int remove_file(terminal_context_t *context, char *path)
@@ -494,41 +477,37 @@ int remove_file(terminal_context_t *context, char *path)
         return -1;
     }
 
-    fs_retcode_t retcode;
     inode_t *parent = NULL;
     if(token_count > 1){
-    retcode = followPath(context -> fs, context -> working_directory, tokens, token_count-1, &parent);
-        if(retcode  != SUCCESS){
+        fs_retcode_t ret = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(ret != SUCCESS){
             free(buffer);
             REPORT_RETCODE(DIR_NOT_FOUND);
             return -1;
         }
-    }
+    } 
     else{
         parent = context->working_directory;
     }
-
     const char *last = tokens[token_count - 1];
-    inode_index_t child_idx = childIndex(context -> fs, parent, last);
+    inode_index_t child_idx = childIndex(context->fs, parent, last);
     if(child_idx == 0){
         REPORT_RETCODE(FILE_NOT_FOUND);
         free(buffer);
         return -1;
     }
-
-    inode_t *child = &context ->fs->inodes[child_idx];
+    inode_t *child = &context->fs->inodes[child_idx];
     if(child->internal.file_type != DATA_FILE){
         REPORT_RETCODE(FILE_NOT_FOUND);
         free(buffer);
         return -1;
     }
-
     size_t e_read = 0;
-    byte *dirbuffer = readDir(context -> fs, parent, &e_read);
+    byte *dirbuffer = readDir(context->fs, parent, &e_read);
     if(!dirbuffer){
         REPORT_RETCODE(FILE_NOT_FOUND);
         free(buffer);
-        return -1;    
+        return -1;
     }
     int to_tomb = -1;
     for(size_t i = 0; i < e_read; i++){
@@ -545,16 +524,14 @@ int remove_file(terminal_context_t *context, char *path)
         REPORT_RETCODE(FILE_NOT_FOUND);
         return -1;
     }
-    memset(dirbuffer + to_tomb * DIRECTORY_ENTRY_SIZE,0,DIRECTORY_ENTRY_SIZE);
-
-    retcode = writeDir(context -> fs, parent, dirbuffer, e_read);
-    if(retcode  != SUCCESS){
+    memset(dirbuffer + to_tomb * DIRECTORY_ENTRY_SIZE, 0, DIRECTORY_ENTRY_SIZE);
+    fs_retcode_t retcode = writeDir(context->fs, parent, dirbuffer, e_read);
+    if(retcode != SUCCESS){
         free(dirbuffer);
         free(buffer);
-        REPORT_RETCODE(retcode );
+        REPORT_RETCODE(retcode);
         return -1;
     }
-
     while(e_read > 0){
         byte *remove_tombs = dirbuffer + (e_read - 1) * DIRECTORY_ENTRY_SIZE;
         inode_index_t index = decodeInode(remove_tombs);
@@ -563,16 +540,13 @@ int remove_file(terminal_context_t *context, char *path)
         }
         e_read--;
     }
-
-    retcode = writeDir(context -> fs, parent, dirbuffer, e_read);
+    retcode = writeDir(context->fs, parent, dirbuffer, e_read);
     free(dirbuffer);
-
-    inode_release_data(context -> fs, child);
-    release_inode(context -> fs, child);
-
+    inode_release_data(context->fs, child);
+    release_inode(context->fs, child);
     free(buffer);
-    if(retcode  != SUCCESS){
-        REPORT_RETCODE(retcode );
+    if(retcode != SUCCESS){
+        REPORT_RETCODE(retcode);
         return -1;
     }
     return 0;
@@ -597,49 +571,44 @@ int remove_directory(terminal_context_t *context, char *path)
         return -1;
     }
 
-    fs_retcode_t retcode;
     inode_t *parent = NULL;
     if(token_count > 1){
-    retcode = followPath(context -> fs, context -> working_directory, tokens, token_count-1, &parent);
-        if(retcode  != SUCCESS){
+        fs_retcode_t ret = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(ret != SUCCESS){
             free(buffer);
             REPORT_RETCODE(DIR_NOT_FOUND);
             return -1;
         }
-    }
+    } 
     else{
         parent = context->working_directory;
     }
-
     const char *last = tokens[token_count - 1];
-    if(strcmp(last,".") == 0 || strcmp(last,"..") == 0){
+    if(strcmp(last, ".") == 0 || strcmp(last, "..") == 0){
         REPORT_RETCODE(INVALID_FILENAME);
         free(buffer);
         return -1;
     }
-
-    inode_index_t child_idx = childIndex(context -> fs, parent, last);
+    inode_index_t child_idx = childIndex(context->fs, parent, last);
     if(child_idx == 0){
         REPORT_RETCODE(DIR_NOT_FOUND);
         free(buffer);
         return -1;
     }
-    inode_t *child = &context -> fs -> inodes[child_idx];
-    if(child -> internal.file_type != DIRECTORY){
+    inode_t *child = &context->fs->inodes[child_idx];
+    if(child->internal.file_type != DIRECTORY){
         REPORT_RETCODE(DIR_NOT_FOUND);
         free(buffer);
         return -1;
     }
-
-    inode_t *cwd = context -> working_directory;
+    inode_t *cwd = context->working_directory;
     if(child == cwd){
         REPORT_RETCODE(ATTEMPT_DELETE_CWD);
         free(buffer);
         return -1;
     }
-
     size_t dir_content = 0;
-    byte *data = readDir(context -> fs, child, &dir_content);
+    byte *data = readDir(context->fs, child, &dir_content);
     int is_empty = 1;
     for(size_t i = 0; i < dir_content; i++){
         byte *ent = data + i * DIRECTORY_ENTRY_SIZE;
@@ -649,9 +618,9 @@ int remove_directory(terminal_context_t *context, char *path)
         }
         char name[MAX_FILE_NAME_LEN + 1];
         memset(name,0,sizeof(name));
-        memcpy(name,ent + 2,MAX_FILE_NAME_LEN);
+        memcpy(name, ent + 2, MAX_FILE_NAME_LEN);
         if(strcmp(name,".") == 0 || strcmp(name,"..") == 0){
-            //false
+        
         }
         else{
             is_empty = 0;
@@ -665,9 +634,8 @@ int remove_directory(terminal_context_t *context, char *path)
         return -1;
     }
     free(data);
-
     size_t parent_enum = 0;
-    byte *pbuffer = readDir(context -> fs, parent, &parent_enum);
+    byte *pbuffer = readDir(context->fs, parent, &parent_enum);
     if(!pbuffer){
         REPORT_RETCODE(DIR_NOT_FOUND);
         free(buffer);
@@ -688,15 +656,14 @@ int remove_directory(terminal_context_t *context, char *path)
         REPORT_RETCODE(DIR_NOT_FOUND);
         return -1;
     }
-    memset(pbuffer + sub_target * DIRECTORY_ENTRY_SIZE,0,DIRECTORY_ENTRY_SIZE);
-    retcode = writeDir(context -> fs, parent, pbuffer, parent_enum);
-    if(retcode  != SUCCESS){
+    memset(pbuffer + sub_target * DIRECTORY_ENTRY_SIZE, 0, DIRECTORY_ENTRY_SIZE);
+    fs_retcode_t retcode = writeDir(context->fs, parent, pbuffer, parent_enum);
+    if(retcode != SUCCESS){
         free(pbuffer);
         free(buffer);
-        REPORT_RETCODE(retcode );
+        REPORT_RETCODE(retcode);
         return -1;
     }
-
     while(parent_enum > 0){
         byte *remove_tombs = pbuffer + (parent_enum - 1) * DIRECTORY_ENTRY_SIZE;
         inode_index_t index = decodeInode(remove_tombs);
@@ -705,18 +672,19 @@ int remove_directory(terminal_context_t *context, char *path)
         }
         parent_enum--;
     }
-    retcode = writeDir(context -> fs, parent, pbuffer, parent_enum);
+
+
+    retcode = writeDir(context->fs, parent, pbuffer, parent_enum);
     free(pbuffer);
-
-    inode_release_data(context -> fs, child);
-    release_inode(context -> fs, child);
-
+    inode_release_data(context->fs, child);
+    release_inode(context->fs, child);
     free(buffer);
-    if(retcode  != SUCCESS){
-        REPORT_RETCODE(retcode );
+    if(retcode != SUCCESS){
+        REPORT_RETCODE(retcode);
         return -1;
     }
     return 0;
+
 }
 
 int change_directory(terminal_context_t *context, char *path)
@@ -737,34 +705,31 @@ int change_directory(terminal_context_t *context, char *path)
         return -1;
     }
 
-    fs_retcode_t retcode;
     inode_t *parent = NULL;
     if(token_count > 1){
-    retcode = followPath(context -> fs, context -> working_directory, tokens, token_count-1, &parent);
-        if(retcode  != SUCCESS){
+        fs_retcode_t ret = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(ret != SUCCESS){
             free(buffer);
             REPORT_RETCODE(DIR_NOT_FOUND);
             return -1;
         }
-    }
+    } 
     else{
         parent = context->working_directory;
     }
-
     const char *last = tokens[token_count - 1];
-    inode_index_t child_idx = childIndex(context -> fs, parent, last);
+    inode_index_t child_idx = childIndex(context->fs, parent, last);
     if(!child_idx){
         free(buffer);
         REPORT_RETCODE(DIR_NOT_FOUND);
         return -1;
     }
-    inode_t *child = &context -> fs -> inodes[child_idx];
-    if(child -> internal.file_type != DIRECTORY){
+    inode_t *child = &context->fs->inodes[child_idx];
+    if(child->internal.file_type != DIRECTORY){
         free(buffer);
         REPORT_RETCODE(DIR_NOT_FOUND);
         return -1;
     }
-
     context->working_directory = child;
     free(buffer);
     return 0;
@@ -784,8 +749,8 @@ int list(terminal_context_t *context, char *path)
 
     inode_t *parent = NULL;
     if(token_count > 1){
-        fs_retcode_t ret = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
-        if(ret != SUCCESS){
+        fs_retcode_t retcode = followPath(context->fs, context->working_directory, tokens, token_count - 1, &parent);
+        if(retcode != SUCCESS){
             REPORT_RETCODE(DIR_NOT_FOUND);
             free(buffer);
             return -1;
@@ -973,8 +938,8 @@ int tree(terminal_context_t *context, char *path)
         dis_node = parent;
     } 
     else{
-        const char *final_name = tokens[token_count - 1];
-        inode_index_t child_idx = childIndex(context->fs, parent, final_name);
+        const char *final = tokens[token_count - 1];
+        inode_index_t child_idx = childIndex(context->fs, parent, final);
         if(child_idx == 0){
             REPORT_RETCODE(NOT_FOUND);
             free(buffer);
